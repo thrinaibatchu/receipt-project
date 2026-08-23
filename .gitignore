@@ -16,3 +16,10 @@ wheels/
 
 # Environment variables
 .env
+
+# Personal receipt data
+data/raw/
+data/extracted/
+
+# Raw personal receipt files
+data/raw_receipts/

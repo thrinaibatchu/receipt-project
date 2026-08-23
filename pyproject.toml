@@ -7,7 +7,11 @@ authors = [
     { name = "thrinaibatchu", email = "172543756+thrinaibatchu@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "google-genai>=2.19.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.3",
+]
 
 [project.scripts]
 receipt-project = "receipt_project:main"

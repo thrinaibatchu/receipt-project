@@ -41,6 +41,16 @@ def create_database() -> None:
             FOREIGN KEY (receipt_id) REFERENCES receipts(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
         );
+
+        CREATE TABLE IF NOT EXISTS receipt_discounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            raw_description TEXT NOT NULL,
+            amount REAL NOT NULL,
+            related_item_code TEXT,
+
+            FOREIGN KEY (receipt_id) REFERENCES receipts(id)
+        );
         """
     )
 
