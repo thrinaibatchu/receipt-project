@@ -29,3 +29,6 @@ jobs:
 
       - name: List OneDrive receipt candidates
         run: uv run --frozen python scripts/list_onedrive_receipts.py
+
+      - name: Verify OneDrive receipt download
+        run: uv run --frozen python scripts/verify_onedrive_download.py
