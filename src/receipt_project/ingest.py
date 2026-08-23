@@ -1,7 +1,10 @@
 import sys
 from pathlib import Path
 
-from receipt_project.database.writer import insert_receipt
+from receipt_project.database.writer import (
+    find_receipt_by_source_hash,
+    insert_receipt,
+)
 from receipt_project.extraction.gemini import extract_receipt
 from receipt_project.validation.receipt_checks import validate_receipt_totals
 from receipt_project.identity import (
@@ -12,6 +15,26 @@ from receipt_project.identity import (
 def ingest_receipt(file_path: Path) -> None:
     print(f"Processing receipt: {file_path}")
 
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Receipt file not found: {file_path}"
+        )
+
+    # Step 1: hash the raw file before calling Gemini
+    source_hash = calculate_source_hash(file_path)
+
+    # Step 2: skip exact duplicate files immediately
+    existing = find_receipt_by_source_hash(source_hash)
+
+    if existing:
+        print(
+            "Duplicate file detected. "
+            f"Existing receipt id={existing[0]}, "
+            f"source_file={existing[1]}"
+        )
+        return
+
+    # Step 3: only call Gemini for a new source file
     receipt = extract_receipt(file_path)
 
     print(
@@ -19,9 +42,8 @@ def ingest_receipt(file_path: Path) -> None:
         f"- {receipt.purchase_date}"
     )
 
+    # Step 4: quality validation
     issues = validate_receipt_totals(receipt)
-    source_hash = calculate_source_hash(file_path)
-    receipt_fingerprint = calculate_receipt_fingerprint(receipt)
 
     if issues:
         print()
@@ -32,7 +54,17 @@ def ingest_receipt(file_path: Path) -> None:
 
         return
 
-    receipt_id = insert_receipt(receipt, source_hash, receipt_fingerprint)
+    # Step 5: calculate logical identity after extraction
+    receipt_fingerprint = calculate_receipt_fingerprint(
+        receipt
+    )
+
+    # Step 6: database insertion
+    receipt_id = insert_receipt(
+        receipt,
+        source_hash,
+        receipt_fingerprint,
+    )
 
     print()
     print(

@@ -102,7 +102,7 @@ Rules:
 23. Extract the store transaction or receipt identifier into transaction_id when one is clearly printed.
 24. Do not invent a transaction_id
 25. If the purchase date is not clearly visible in the supplied file,
-set purchase_date to null. Never infer or guess the date.:
+set purchase_date to null. Never infer, estimate, or guess the purchase date from other information.:
     {file_path.name}
 """
 

@@ -16,7 +16,7 @@ def create_database() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 
             store_name TEXT NOT NULL,
-            purchase_date TEXT NOT NULL,
+            purchase_date TEXT,
 
             subtotal REAL,
             tax REAL,
@@ -26,7 +26,7 @@ def create_database() -> None:
 
             source_file TEXT NOT NULL,
             source_hash TEXT NOT NULL UNIQUE,
-            receipt_fingerprint TEXT NOT NULL UNIQUE,
+            receipt_fingerprint TEXT UNIQUE,
 
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );

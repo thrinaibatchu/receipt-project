@@ -57,8 +57,9 @@ class Receipt(BaseModel):
     description="Store transaction or receipt identifier when clearly printed"
     )
 
-    purchase_date: date = Field(
-        description="Receipt transaction date"
+    purchase_date: date | None = Field(
+        default=None,
+        description="Receipt transaction date when clearly visible; otherwise null"
     )
 
     subtotal: float | None = Field(

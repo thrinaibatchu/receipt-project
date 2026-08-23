@@ -6,11 +6,28 @@ from receipt_project.models.receipt import Receipt
 
 DB_PATH = Path("data/receipts.db")
 
+def find_receipt_by_source_hash(source_hash: str):
+    connection = sqlite3.connect(DB_PATH)
+
+    try:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                source_file
+            FROM receipts
+            WHERE source_hash = ?
+            """,
+            (source_hash,),
+        ).fetchone()
+
+    finally:
+        connection.close()
 
 def insert_receipt(
     receipt: Receipt,
     source_hash: str,
-    receipt_fingerprint: str,
+    receipt_fingerprint: str | None,
 ) -> int:
     connection = sqlite3.connect(DB_PATH)
 
@@ -27,7 +44,10 @@ def insert_receipt(
                 source_file
             FROM receipts
             WHERE source_hash = ?
-               OR receipt_fingerprint = ?
+            OR (
+                    receipt_fingerprint IS NOT NULL
+                    AND receipt_fingerprint = ?
+            )
             """,
             (
                 source_hash,
@@ -59,7 +79,9 @@ def insert_receipt(
             """,
             (
                 receipt.store_name,
-                receipt.purchase_date.isoformat(),
+                receipt.purchase_date.isoformat()
+                if receipt.purchase_date
+                else None,
                 receipt.subtotal,
                 receipt.tax,
                 receipt.total,

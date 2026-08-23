@@ -15,23 +15,35 @@ def calculate_source_hash(file_path: Path) -> str:
     return hasher.hexdigest()
 
 
-def calculate_receipt_fingerprint(receipt: Receipt) -> str:
-    items = [
-        {
-            "code": item.store_item_code,
-            "description": item.raw_description,
-            "quantity": item.quantity,
-            "total_price": item.total_price,
-        }
-        for item in receipt.items
-    ]
+def normalize_store_name(store_name: str) -> str:
+    return " ".join(
+        store_name.strip().upper().split()
+    )
+
+
+def calculate_receipt_fingerprint(
+    receipt: Receipt,
+) -> str | None:
+    """
+    Return a logical receipt fingerprint only when
+    strong transaction identity is available.
+
+    We deliberately do not fingerprint receipts using
+    only date, total, or item descriptions because OCR
+    errors could cause false duplicate matches.
+    """
+
+    if not receipt.transaction_id:
+        return None
 
     identity_data = {
-        "store": receipt.store_name.strip().upper(),
-        "purchase_date": receipt.purchase_date.isoformat(),
+        "store": normalize_store_name(
+            receipt.store_name
+        ),
+        "transaction_id": (
+            receipt.transaction_id.strip()
+        ),
         "total": round(receipt.total, 2),
-        "transaction_id": receipt.transaction_id,
-        "items": items,
     }
 
     serialized = json.dumps(
