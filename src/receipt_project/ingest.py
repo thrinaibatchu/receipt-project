@@ -4,7 +4,10 @@ from pathlib import Path
 from receipt_project.database.writer import insert_receipt
 from receipt_project.extraction.gemini import extract_receipt
 from receipt_project.validation.receipt_checks import validate_receipt_totals
-
+from receipt_project.identity import (
+    calculate_receipt_fingerprint,
+    calculate_source_hash,
+)
 
 def ingest_receipt(file_path: Path) -> None:
     print(f"Processing receipt: {file_path}")
@@ -17,6 +20,8 @@ def ingest_receipt(file_path: Path) -> None:
     )
 
     issues = validate_receipt_totals(receipt)
+    source_hash = calculate_source_hash(file_path)
+    receipt_fingerprint = calculate_receipt_fingerprint(receipt)
 
     if issues:
         print()
@@ -27,7 +32,7 @@ def ingest_receipt(file_path: Path) -> None:
 
         return
 
-    receipt_id = insert_receipt(receipt)
+    receipt_id = insert_receipt(receipt, source_hash, receipt_fingerprint)
 
     print()
     print(

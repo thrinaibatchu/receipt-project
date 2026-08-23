@@ -14,12 +14,20 @@ def create_database() -> None:
         """
         CREATE TABLE IF NOT EXISTS receipts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+
             store_name TEXT NOT NULL,
             purchase_date TEXT NOT NULL,
+
             subtotal REAL,
             tax REAL,
             total REAL NOT NULL,
-            source_file TEXT,
+
+            transaction_id TEXT,
+
+            source_file TEXT NOT NULL,
+            source_hash TEXT NOT NULL UNIQUE,
+            receipt_fingerprint TEXT NOT NULL UNIQUE,
+
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -33,7 +41,10 @@ def create_database() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             receipt_id INTEGER NOT NULL,
             product_id INTEGER,
+
+            store_item_code TEXT,
             raw_description TEXT NOT NULL,
+
             quantity REAL NOT NULL DEFAULT 1,
             unit_price REAL,
             total_price REAL NOT NULL,

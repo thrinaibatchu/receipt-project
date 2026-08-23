@@ -4,14 +4,19 @@ from pydantic import BaseModel, Field
 
 
 class ReceiptItem(BaseModel):
+    store_item_code: str | None = Field(
+        default=None,
+        description="Store-specific item/SKU code printed separately from the product description"
+    )
+
     raw_description: str = Field(
-        description="Item description exactly as printed on the receipt"
+        description="Product description exactly as printed, excluding the store item code"
     )
 
     quantity: float = Field(
         default=1,
         ge=0,
-        description="Quantity purchased"
+        description="Actual quantity purchased"
     )
 
     unit_price: float | None = Field(
@@ -22,7 +27,7 @@ class ReceiptItem(BaseModel):
 
     total_price: float = Field(
         ge=0,
-        description="Total amount charged for this item before discounts"
+        description="Merchandise line amount before separately printed discounts"
     )
 
 
@@ -45,6 +50,11 @@ class ReceiptDiscount(BaseModel):
 class Receipt(BaseModel):
     store_name: str = Field(
         description="Store or merchant name"
+    )
+
+    transaction_id: str | None = Field(
+    default=None,
+    description="Store transaction or receipt identifier when clearly printed"
     )
 
     purchase_date: date = Field(

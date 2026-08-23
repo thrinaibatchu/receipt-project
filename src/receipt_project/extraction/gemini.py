@@ -92,7 +92,17 @@ Rules:
 16. If tax is not shown, use null.
 17. If subtotal is not shown, use null.
 18. Never invent unreadable values.
-19. source_file must be exactly:
+19. source_file must be exactly
+20. Separate store item/SKU numbers from product descriptions.
+21. Put the item/SKU number in store_item_code.
+22. Do not include store_item_code again in raw_description.
+    - Example: "664635 SWISSPERS" becomes:
+                store_item_code = "664635"
+                raw_description = "SWISSPERS"
+23. Extract the store transaction or receipt identifier into transaction_id when one is clearly printed.
+24. Do not invent a transaction_id
+25. If the purchase date is not clearly visible in the supplied file,
+set purchase_date to null. Never infer or guess the date.:
     {file_path.name}
 """
 

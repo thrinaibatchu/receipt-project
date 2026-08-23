@@ -7,24 +7,39 @@ from receipt_project.models.receipt import Receipt
 DB_PATH = Path("data/receipts.db")
 
 
-def insert_receipt(receipt: Receipt) -> int:
+def insert_receipt(
+    receipt: Receipt,
+    source_hash: str,
+    receipt_fingerprint: str,
+) -> int:
     connection = sqlite3.connect(DB_PATH)
 
     try:
         connection.execute("PRAGMA foreign_keys = ON")
 
+        # Detect either:
+        # 1. the exact same source file, or
+        # 2. the same logical receipt extracted from another file
         existing = connection.execute(
             """
-            SELECT id
+            SELECT
+                id,
+                source_file
             FROM receipts
-            WHERE source_file = ?
+            WHERE source_hash = ?
+               OR receipt_fingerprint = ?
             """,
-            (receipt.source_file,),
+            (
+                source_hash,
+                receipt_fingerprint,
+            ),
         ).fetchone()
 
         if existing:
             raise ValueError(
-                f"Receipt already exists with id={existing[0]}"
+                "Duplicate receipt detected. "
+                f"Existing receipt id={existing[0]}, "
+                f"source_file={existing[1]}"
             )
 
         cursor = connection.execute(
@@ -35,9 +50,12 @@ def insert_receipt(receipt: Receipt) -> int:
                 subtotal,
                 tax,
                 total,
-                source_file
+                transaction_id,
+                source_file,
+                source_hash,
+                receipt_fingerprint
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 receipt.store_name,
@@ -45,7 +63,10 @@ def insert_receipt(receipt: Receipt) -> int:
                 receipt.subtotal,
                 receipt.tax,
                 receipt.total,
+                receipt.transaction_id,
                 receipt.source_file,
+                source_hash,
+                receipt_fingerprint,
             ),
         )
 
@@ -57,22 +78,25 @@ def insert_receipt(receipt: Receipt) -> int:
                 INSERT INTO receipt_items (
                     receipt_id,
                     product_id,
+                    store_item_code,
                     raw_description,
                     quantity,
                     unit_price,
                     total_price
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     receipt_id,
                     None,
+                    item.store_item_code,
                     item.raw_description,
                     item.quantity,
                     item.unit_price,
                     item.total_price,
                 ),
             )
+
         for discount in receipt.discounts:
             connection.execute(
                 """
@@ -88,9 +112,10 @@ def insert_receipt(receipt: Receipt) -> int:
                     receipt_id,
                     discount.raw_description,
                     discount.amount,
-                    discount.related_item_code
+                    discount.related_item_code,
                 ),
             )
+
         connection.commit()
 
         return receipt_id
