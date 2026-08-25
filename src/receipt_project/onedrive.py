@@ -387,3 +387,92 @@ def download_from_receipts(filename: str) -> bytes:
     response.raise_for_status()
 
     return response.content
+
+def ensure_review_folder() -> dict:
+    """
+    Return /Receipts/review, creating it if necessary.
+    """
+    access_token = get_access_token()
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    folder_url = (
+        f"{GRAPH_BASE_URL}"
+        "/me/drive/root:/Receipts/review"
+    )
+
+    response = requests.get(
+        folder_url,
+        headers=headers,
+        timeout=30,
+    )
+
+    if response.status_code == 200:
+        return response.json()
+
+    if response.status_code != 404:
+        response.raise_for_status()
+
+    create_response = requests.post(
+        f"{GRAPH_BASE_URL}"
+        "/me/drive/root:/Receipts:/children",
+        headers={
+            **headers,
+            "Content-Type": "application/json",
+        },
+        json={
+            "name": "review",
+            "folder": {},
+            "@microsoft.graph.conflictBehavior": "fail",
+        },
+        timeout=30,
+    )
+
+    create_response.raise_for_status()
+
+    return create_response.json()
+
+
+def move_drive_item_to_review(
+    item_id: str,
+    original_filename: str,
+) -> dict:
+    """
+    Move a receipt into /Receipts/review.
+
+    A short stable tag based on the OneDrive item ID prevents
+    filename collisions while preserving the original filename.
+    """
+    access_token = get_access_token()
+    review_folder = ensure_review_folder()
+
+    path = Path(original_filename)
+
+    item_tag = hashlib.sha256(
+        item_id.encode("utf-8")
+    ).hexdigest()[:12]
+
+    review_name = (
+        f"{path.stem}__{item_tag}{path.suffix}"
+    )
+
+    response = requests.patch(
+        f"{GRAPH_BASE_URL}/me/drive/items/{item_id}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "parentReference": {
+                "id": review_folder["id"],
+            },
+            "name": review_name,
+        },
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.json()

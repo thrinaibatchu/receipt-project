@@ -1,4 +1,5 @@
 import sys
+from enum import Enum
 from pathlib import Path
 
 from receipt_project.database.writer import (
@@ -6,13 +7,22 @@ from receipt_project.database.writer import (
     insert_receipt,
 )
 from receipt_project.extraction.gemini import extract_receipt
-from receipt_project.validation.receipt_checks import validate_receipt_totals
 from receipt_project.identity import (
     calculate_receipt_fingerprint,
     calculate_source_hash,
 )
+from receipt_project.validation.receipt_checks import (
+    validate_receipt_totals,
+)
 
-def ingest_receipt(file_path: Path) -> None:
+
+class IngestStatus(str, Enum):
+    INSERTED = "inserted"
+    DUPLICATE = "duplicate"
+    REVIEW_REQUIRED = "review_required"
+
+
+def ingest_receipt(file_path: Path) -> IngestStatus:
     print(f"Processing receipt: {file_path}")
 
     if not file_path.exists():
@@ -32,7 +42,8 @@ def ingest_receipt(file_path: Path) -> None:
             f"Existing receipt id={existing[0]}, "
             f"source_file={existing[1]}"
         )
-        return
+
+        return IngestStatus.DUPLICATE
 
     # Step 3: only call Gemini for a new source file
     receipt = extract_receipt(file_path)
@@ -52,7 +63,7 @@ def ingest_receipt(file_path: Path) -> None:
         for issue in issues:
             print(f"  - {issue}")
 
-        return
+        return IngestStatus.REVIEW_REQUIRED
 
     # Step 5: calculate logical identity after extraction
     receipt_fingerprint = calculate_receipt_fingerprint(
@@ -72,6 +83,8 @@ def ingest_receipt(file_path: Path) -> None:
         f"with id={receipt_id}"
     )
 
+    return IngestStatus.INSERTED
+
 
 def main() -> None:
     if len(sys.argv) != 2:
@@ -83,7 +96,10 @@ def main() -> None:
 
     file_path = Path(sys.argv[1])
 
-    ingest_receipt(file_path)
+    status = ingest_receipt(file_path)
+
+    if status == IngestStatus.REVIEW_REQUIRED:
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

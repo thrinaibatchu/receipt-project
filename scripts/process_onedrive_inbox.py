@@ -1,61 +1,88 @@
-import subprocess
 import sys
 import tempfile
+from enum import Enum
 from pathlib import Path
 
+from receipt_project.ingest import (
+    IngestStatus,
+    ingest_receipt,
+)
 from receipt_project.onedrive import (
     download_drive_item,
     list_receipt_files,
     move_drive_item_to_processed,
+    move_drive_item_to_review,
 )
 
 
-def process_receipt(item: dict) -> bool:
+class InboxResult(str, Enum):
+    PROCESSED = "processed"
+    REVIEW = "review"
+    FAILED = "failed"
+
+
+def process_receipt(item: dict) -> InboxResult:
     filename = item["name"]
     item_id = item["id"]
 
     print()
     print(f"Processing OneDrive receipt: {filename}")
 
-    content = download_drive_item(item_id)
+    try:
+        content = download_drive_item(item_id)
 
-    # Use an isolated temporary directory while preserving the original
-    # filename. That keeps receipt.source_file meaningful while avoiding
-    # collisions with files already under data/raw_receipts/.
-    with tempfile.TemporaryDirectory(
-        prefix="receipt-project-"
-    ) as temp_dir:
-        local_path = Path(temp_dir) / filename
-        local_path.write_bytes(content)
+        # Preserve the original filename while keeping the downloaded
+        # file isolated from local receipt storage.
+        with tempfile.TemporaryDirectory(
+            prefix="receipt-project-"
+        ) as temp_dir:
+            local_path = Path(temp_dir) / filename
+            local_path.write_bytes(content)
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "receipt_project.ingest",
-                str(local_path),
-            ],
-            check=False,
+            status = ingest_receipt(local_path)
+
+        if status == IngestStatus.REVIEW_REQUIRED:
+            moved = move_drive_item_to_review(
+                item_id=item_id,
+                original_filename=filename,
+            )
+
+            print(
+                "Moved to review:",
+                moved.get("name", filename),
+            )
+
+            return InboxResult.REVIEW
+
+        if status in {
+            IngestStatus.INSERTED,
+            IngestStatus.DUPLICATE,
+        }:
+            moved = move_drive_item_to_processed(
+                item_id=item_id,
+                original_filename=filename,
+            )
+
+            print(
+                "Moved to processed:",
+                moved.get("name", filename),
+            )
+
+            return InboxResult.PROCESSED
+
+        raise RuntimeError(
+            f"Unexpected ingestion status: {status}"
         )
 
-    if result.returncode != 0:
+    except Exception as exc:
         print(
-            f"Ingestion FAILED for {filename}. "
-            "File remains in /Receipts."
+            f"Processing FAILED for {filename}: {exc}"
         )
-        return False
+        print(
+            "File remains in /Receipts for retry."
+        )
 
-    moved = move_drive_item_to_processed(
-        item_id=item_id,
-        original_filename=filename,
-    )
-
-    print(
-        "Moved to processed:",
-        moved.get("name", filename),
-    )
-
-    return True
+        return InboxResult.FAILED
 
 
 def main():
@@ -67,22 +94,35 @@ def main():
         print("Nothing to process.")
         return
 
-    succeeded = 0
+    processed = 0
+    review = 0
     failed = 0
 
     for item in files:
-        if process_receipt(item):
-            succeeded += 1
+        result = process_receipt(item)
+
+        if result == InboxResult.PROCESSED:
+            processed += 1
+
+        elif result == InboxResult.REVIEW:
+            review += 1
+
         else:
             failed += 1
 
     print()
     print("OneDrive inbox processing complete.")
-    print(f"Succeeded: {succeeded}")
+    print(f"Processed: {processed}")
+    print(f"Needs review: {review}")
     print(f"Failed: {failed}")
 
+    # Review-required receipts have been safely quarantined and are
+    # therefore not considered an orchestration failure.
+    #
+    # Transient/unexpected failures stay in /Receipts and make the
+    # workflow fail so the problem is visible.
     if failed:
-        sys.exit(1)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
