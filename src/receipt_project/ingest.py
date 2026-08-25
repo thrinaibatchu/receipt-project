@@ -71,11 +71,27 @@ def ingest_receipt(file_path: Path) -> IngestStatus:
     )
 
     # Step 6: database insertion
-    receipt_id = insert_receipt(
-        receipt,
-        source_hash,
-        receipt_fingerprint,
-    )
+    #
+    # Exact-file duplicates are detected before Gemini using source_hash.
+    #
+    # A logical duplicate can only be detected after extraction because
+    # receipt_fingerprint depends on extracted receipt fields. Treat that
+    # case as a normal duplicate outcome rather than a processing failure.
+    try:
+        receipt_id = insert_receipt(
+            receipt,
+            source_hash,
+            receipt_fingerprint,
+        )
+
+    except ValueError as exc:
+        if str(exc).startswith("Duplicate receipt detected."):
+            print()
+            print(str(exc))
+
+            return IngestStatus.DUPLICATE
+
+        raise
 
     print()
     print(
@@ -98,6 +114,9 @@ def main() -> None:
 
     status = ingest_receipt(file_path)
 
+    # REVIEW_REQUIRED is a handled ingestion outcome, but the CLI returns
+    # a non-zero status so callers that rely on exit codes do not mistake
+    # the receipt for successfully processed data.
     if status == IngestStatus.REVIEW_REQUIRED:
         raise SystemExit(2)
 
