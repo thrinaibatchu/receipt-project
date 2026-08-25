@@ -1,4 +1,4 @@
-name: OneDrive Graph Smoke Test
+name: OneDrive Receipt Processing
 
 on:
   workflow_dispatch:
@@ -7,12 +7,17 @@ permissions:
   contents: read
 
 jobs:
-  test-onedrive:
+  process-receipts:
     runs-on: ubuntu-latest
 
     env:
       MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
       MICROSOFT_REFRESH_TOKEN: ${{ secrets.MICROSOFT_REFRESH_TOKEN }}
+
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      RECEIPT_DB_BACKEND: postgres
 
     steps:
       - name: Check out repository
@@ -27,8 +32,14 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
-      - name: List OneDrive receipt candidates
+      - name: List receipt candidates before processing
         run: uv run --frozen python scripts/list_onedrive_receipts.py
 
-      - name: Verify OneDrive receipt download
+      - name: Verify OneDrive receipt downloads
         run: uv run --frozen python scripts/verify_onedrive_download.py
+
+      - name: Process OneDrive receipt inbox
+        run: uv run --frozen python scripts/process_onedrive_inbox.py
+
+      - name: List receipt candidates after processing
+        run: uv run --frozen python scripts/list_onedrive_receipts.py
