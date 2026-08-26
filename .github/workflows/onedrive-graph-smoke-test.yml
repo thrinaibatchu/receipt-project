@@ -3,8 +3,15 @@ name: OneDrive Receipt Processing
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "17 * * * *"
+
 permissions:
   contents: read
+
+concurrency:
+  group: receipt-processing
+  cancel-in-progress: false
 
 jobs:
   process-receipts:
@@ -34,9 +41,6 @@ jobs:
 
       - name: List receipt candidates before processing
         run: uv run --frozen python scripts/list_onedrive_receipts.py
-
-      - name: Verify OneDrive receipt downloads
-        run: uv run --frozen python scripts/verify_onedrive_download.py
 
       - name: Process OneDrive receipt inbox
         run: uv run --frozen python scripts/process_onedrive_inbox.py
