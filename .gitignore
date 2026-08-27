@@ -23,3 +23,6 @@ data/extracted/
 
 # Raw personal receipt files
 data/raw_receipts/
+
+# macOS
+.DS_Store

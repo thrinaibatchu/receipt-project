@@ -279,36 +279,6 @@ def ensure_extracted_folder() -> dict:
     return create_response.json()
 
 
-def upload_to_receipts(
-    filename: str,
-    content: bytes,
-    content_type: str = "application/octet-stream",
-) -> dict:
-    """
-    Upload a small file to the /Receipts OneDrive landing folder.
-    """
-    access_token = get_access_token()
-
-    upload_url = (
-        f"{GRAPH_BASE_URL}"
-        f"/me/drive/root:/Receipts/{filename}:/content"
-    )
-
-    response = requests.put(
-        upload_url,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": content_type,
-        },
-        data=content,
-        timeout=30,
-    )
-
-    response.raise_for_status()
-
-    return response.json()
-
-
 def upload_extraction_json(
     item_id: str,
     original_filename: str,
@@ -354,30 +324,6 @@ def upload_extraction_json(
     response.raise_for_status()
 
     return response.json()
-
-
-def download_from_receipts(filename: str) -> bytes:
-    """
-    Download a file from the /Receipts OneDrive landing folder.
-    """
-    access_token = get_access_token()
-
-    download_url = (
-        f"{GRAPH_BASE_URL}"
-        f"/me/drive/root:/Receipts/{filename}:/content"
-    )
-
-    response = requests.get(
-        download_url,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-        },
-        timeout=30,
-    )
-
-    response.raise_for_status()
-
-    return response.content
 
 
 def download_drive_item(item_id: str) -> bytes:
@@ -531,50 +477,3 @@ def move_drive_item_to_review(
     response.raise_for_status()
 
     return response.json()
-
-
-def move_receipt_to_processed(filename: str) -> dict:
-    """
-    Move a receipt from /Receipts into /Receipts/processed.
-
-    Kept for compatibility with existing local scripts.
-    """
-    access_token = get_access_token()
-
-    processed_folder = ensure_processed_folder()
-
-    item_url = (
-        f"{GRAPH_BASE_URL}"
-        f"/me/drive/root:/Receipts/{filename}"
-    )
-
-    response = requests.get(
-        item_url,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-        },
-        timeout=30,
-    )
-
-    response.raise_for_status()
-
-    item = response.json()
-
-    move_response = requests.patch(
-        f"{GRAPH_BASE_URL}"
-        f"/me/drive/items/{item['id']}",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "parentReference": {
-                "id": processed_folder["id"],
-            },
-        },
-        timeout=30,
-    )
-
-    move_response.raise_for_status()
-
-    return move_response.json()
