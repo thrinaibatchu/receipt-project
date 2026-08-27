@@ -1,4 +1,3 @@
-import sys
 import tempfile
 from enum import Enum
 from pathlib import Path
@@ -12,6 +11,7 @@ from receipt_project.onedrive import (
     list_receipt_files,
     move_drive_item_to_processed,
     move_drive_item_to_review,
+    upload_extraction_json,
 )
 
 
@@ -31,15 +31,32 @@ def process_receipt(item: dict) -> InboxResult:
     try:
         content = download_drive_item(item_id)
 
-        # Preserve the original filename while keeping the downloaded
-        # file isolated from local receipt storage.
         with tempfile.TemporaryDirectory(
             prefix="receipt-project-"
         ) as temp_dir:
             local_path = Path(temp_dir) / filename
             local_path.write_bytes(content)
 
-            status = ingest_receipt(local_path)
+            def persist_extraction_json(
+                json_content: str,
+            ) -> None:
+                uploaded = upload_extraction_json(
+                    item_id=item_id,
+                    original_filename=filename,
+                    json_content=json_content,
+                )
+
+                print(
+                    "Saved extraction JSON:",
+                    uploaded.get("name"),
+                )
+
+            status = ingest_receipt(
+                local_path,
+                extraction_json_callback=(
+                    persist_extraction_json
+                ),
+            )
 
         if status == IngestStatus.REVIEW_REQUIRED:
             moved = move_drive_item_to_review(
@@ -116,11 +133,6 @@ def main():
     print(f"Needs review: {review}")
     print(f"Failed: {failed}")
 
-    # Review-required receipts have been safely quarantined and are
-    # therefore not considered an orchestration failure.
-    #
-    # Transient/unexpected failures stay in /Receipts and make the
-    # workflow fail so the problem is visible.
     if failed:
         raise SystemExit(1)
 

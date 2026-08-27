@@ -1,4 +1,5 @@
 import sys
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 
@@ -22,7 +23,10 @@ class IngestStatus(str, Enum):
     REVIEW_REQUIRED = "review_required"
 
 
-def ingest_receipt(file_path: Path) -> IngestStatus:
+def ingest_receipt(
+    file_path: Path,
+    extraction_json_callback: Callable[[str], None] | None = None,
+) -> IngestStatus:
     print(f"Processing receipt: {file_path}")
 
     if not file_path.exists():
@@ -53,7 +57,20 @@ def ingest_receipt(file_path: Path) -> IngestStatus:
         f"- {receipt.purchase_date}"
     )
 
-    # Step 4: quality validation
+    # Step 4: persist the structured extraction before validation.
+    #
+    # This preserves the original structured Gemini result even when
+    # later validation sends the receipt to the review queue.
+    if extraction_json_callback is not None:
+        extraction_json = receipt.model_dump_json(
+            indent=2,
+        )
+
+        extraction_json_callback(extraction_json)
+
+        print("Structured extraction JSON persisted.")
+
+    # Step 5: quality validation
     issues = validate_receipt_totals(receipt)
 
     if issues:
@@ -65,12 +82,12 @@ def ingest_receipt(file_path: Path) -> IngestStatus:
 
         return IngestStatus.REVIEW_REQUIRED
 
-    # Step 5: calculate logical identity after extraction
+    # Step 6: calculate logical identity after extraction
     receipt_fingerprint = calculate_receipt_fingerprint(
         receipt
     )
 
-    # Step 6: database insertion
+    # Step 7: database insertion
     #
     # Exact-file duplicates are detected before Gemini using source_hash.
     #
