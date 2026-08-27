@@ -1,10 +1,10 @@
 [project]
 name = "receipt-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "Personal receipt ingestion and analytics pipeline"
 readme = "README.md"
 authors = [
-    { name = "thrinaibatchu", email = "172543756+thrinaibatchu@users.noreply.github.com" }
+    { name = "thrinaibatchu" }
 ]
 requires-python = ">=3.12"
 dependencies = [
