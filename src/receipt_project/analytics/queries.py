@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from datetime import date
 from decimal import Decimal
@@ -27,7 +29,9 @@ def get_database_url() -> str:
     database_url = os.getenv("ANALYTICS_DATABASE_URL")
 
     if not database_url:
-        raise RuntimeError("DATABASE_URL is missing")
+        raise RuntimeError(
+            "ANALYTICS_DATABASE_URL is missing"
+        )
 
     return database_url
 
@@ -48,10 +52,65 @@ def get_date_bounds() -> tuple[date | None, date | None]:
             return cursor.fetchone()
 
 
+def get_transaction_summary(
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    with psycopg.connect(get_database_url()) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) AS transaction_count,
+                    COUNT(*) FILTER (
+                        WHERE total > 0
+                    ) AS purchase_count,
+                    COUNT(*) FILTER (
+                        WHERE total < 0
+                    ) AS return_count,
+                    COUNT(*) FILTER (
+                        WHERE total = 0
+                    ) AS zero_total_count,
+                    COALESCE(SUM(total), 0) AS net_spend
+                FROM receipts
+                WHERE (
+                    %s::date IS NULL
+                    OR purchase_date >= %s::date
+                )
+                  AND (
+                    %s::date IS NULL
+                    OR purchase_date <= %s::date
+                )
+                """,
+                (
+                    start_date,
+                    start_date,
+                    end_date,
+                    end_date,
+                ),
+            )
+
+            row = cursor.fetchone()
+
+    return {
+        "transaction_count": row[0],
+        "purchase_count": row[1],
+        "return_count": row[2],
+        "zero_total_count": row[3],
+        "net_spend": row[4],
+    }
+
+
 def get_receipt_count(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> int:
+    """
+    Backward-compatible helper.
+
+    This counts transaction rows in receipts, including
+    purchases and returns/refunds.
+    """
     with psycopg.connect(get_database_url()) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -82,6 +141,12 @@ def get_total_spend(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> Decimal:
+    """
+    Backward-compatible helper.
+
+    Returns net spend. Negative return/refund transactions
+    reduce the total.
+    """
     with psycopg.connect(get_database_url()) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -154,6 +219,15 @@ def get_recent_receipts(
             "raw_store_name": row[1],
             "purchase_date": row[2],
             "total": row[3],
+            "transaction_type": (
+                "Purchase"
+                if row[3] > 0
+                else (
+                    "Return / Refund"
+                    if row[3] < 0
+                    else "Zero-value"
+                )
+            ),
         }
         for row in rows
     ]
@@ -198,17 +272,51 @@ def get_spend_by_store(
         if normalized_name not in grouped:
             grouped[normalized_name] = {
                 "store_name": normalized_name,
-                "receipt_count": 0,
-                "total_spend": Decimal("0"),
+                "transaction_count": 0,
+                "purchase_count": 0,
+                "return_count": 0,
+                "zero_total_count": 0,
+                "net_spend": Decimal("0"),
             }
 
-        grouped[normalized_name]["receipt_count"] += 1
-        grouped[normalized_name]["total_spend"] += total
+        grouped[normalized_name][
+            "transaction_count"
+        ] += 1
+
+        if total > 0:
+            grouped[normalized_name][
+                "purchase_count"
+            ] += 1
+        elif total < 0:
+            grouped[normalized_name][
+                "return_count"
+            ] += 1
+        else:
+            grouped[normalized_name][
+                "zero_total_count"
+            ] += 1
+
+        grouped[normalized_name]["net_spend"] += total
+
+    results = []
+
+    for row in grouped.values():
+        results.append(
+            {
+                **row,
+                # Backward-compatible keys used by
+                # existing scripts.
+                "receipt_count": row[
+                    "transaction_count"
+                ],
+                "total_spend": row["net_spend"],
+            }
+        )
 
     return sorted(
-        grouped.values(),
+        results,
         key=lambda row: (
-            -row["total_spend"],
+            -row["net_spend"],
             row["store_name"],
         ),
     )
@@ -478,6 +586,8 @@ def get_receipt_detail(receipt_id: int) -> dict | None:
 
             discount_rows = cursor.fetchall()
 
+    total = receipt_row[5]
+
     return {
         "id": receipt_row[0],
         "store_name": normalize_store_name(receipt_row[1]),
@@ -485,7 +595,16 @@ def get_receipt_detail(receipt_id: int) -> dict | None:
         "purchase_date": receipt_row[2],
         "subtotal": receipt_row[3],
         "tax": receipt_row[4],
-        "total": receipt_row[5],
+        "total": total,
+        "transaction_type": (
+            "Purchase"
+            if total > 0
+            else (
+                "Return / Refund"
+                if total < 0
+                else "Zero-value"
+            )
+        ),
         "transaction_id": receipt_row[6],
         "source_file": receipt_row[7],
         "items": [

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from typing import Any
 
@@ -49,10 +51,14 @@ class SqlPlan(BaseModel):
 def get_database_url() -> str:
     load_dotenv()
 
-    database_url = os.getenv("ANALYTICS_DATABASE_URL")
+    database_url = os.getenv(
+        "ANALYTICS_DATABASE_URL"
+    )
 
     if not database_url:
-        raise RuntimeError("DATABASE_URL is missing")
+        raise RuntimeError(
+            "ANALYTICS_DATABASE_URL is missing"
+        )
 
     return database_url
 
@@ -60,10 +66,14 @@ def get_database_url() -> str:
 def get_gemini_api_key() -> str:
     load_dotenv()
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv(
+        "GEMINI_API_KEY"
+    )
 
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is missing")
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing"
+        )
 
     return api_key
 
@@ -78,13 +88,17 @@ def create_gemini_client() -> genai.Client:
                 max_delay=16.0,
                 exp_base=2,
                 jitter=1.0,
-                http_status_codes=RETRYABLE_HTTP_STATUS_CODES,
+                http_status_codes=(
+                    RETRYABLE_HTTP_STATUS_CODES
+                ),
             ),
         ),
     )
 
 
-def generate_sql_plan(question: str) -> SqlPlan:
+def generate_sql_plan(
+    question: str,
+) -> SqlPlan:
     client = create_gemini_client()
 
     prompt = f"""
@@ -106,6 +120,12 @@ receipts
 - source_file
 - source_hash
 - receipt_fingerprint
+- source_type
+- warehouse_number
+- register_number
+- historical_transaction_number
+- transaction_time
+- historical_key
 - created_at
 
 receipt_items
@@ -117,6 +137,8 @@ receipt_items
 - quantity
 - unit_price
 - total_price
+- source_row_number
+- historical_row_type
 
 receipt_discounts
 - id
@@ -124,6 +146,8 @@ receipt_discounts
 - raw_description
 - amount
 - related_item_code
+- source_row_number
+- historical_row_type
 
 products
 - id
@@ -135,27 +159,62 @@ receipt_items.receipt_id = receipts.id
 receipt_discounts.receipt_id = receipts.id
 receipt_items.product_id = products.id
 
+Transaction semantics:
+- The receipts table represents transactions.
+- A purchase transaction has receipts.total > 0.
+- A return/refund transaction has receipts.total < 0.
+- A zero-value transaction has receipts.total = 0.
+- "transaction" means any row in receipts.
+- Plain "receipt" means a purchase receipt, so use receipts.total > 0.
+- "purchase" or "purchase receipt" means receipts.total > 0.
+- "return" or "refund" means receipts.total < 0.
+- "net spend" means SUM(receipts.total), including negative refunds.
+- "total spend" without another qualifier also means net spend.
+
 Rules:
 1. Return exactly one read-only PostgreSQL query.
 2. Only SELECT or WITH queries are allowed.
 3. Never modify data or database structure.
 4. Only use the four tables listed above.
 5. Do not query system catalogs.
-6. Do not use source_hash or receipt_fingerprint unless explicitly needed.
-7. For item-name questions, use receipt_items.raw_description as the primary field.
-8. Do not join products unless the user's question explicitly requires
+6. Do not use source_hash, receipt_fingerprint, or historical_key unless
+   explicitly needed.
+7. For item-name questions, use receipt_items.raw_description as the
+   primary matching field.
+8. Use ILIKE for natural-language item matching.
+9. Do not join products unless the user's question explicitly requires
    products.canonical_name or products.category.
-9. product_id may be NULL for many receipt_items, so an INNER JOIN to products
-   can incorrectly remove valid receipt items.
-10. "How many times did I buy X?" means count distinct receipts containing X,
-    using receipt_items.raw_description ILIKE.
-11. "How many units of X did I buy?" or "How many X did I buy?" means
-    SUM(receipt_items.quantity), filtering receipt_items.raw_description with ILIKE.
-12. Monetary item spend uses receipt_items.total_price unless the question is
-    specifically about receipt totals.
-13. Use purchase_date for date filtering.
-14. Do not invent columns.
-15. Add LIMIT 100 for row-level result queries when appropriate.
+10. product_id may be NULL for many receipt_items, so an INNER JOIN to
+    products can incorrectly remove valid receipt items.
+11. "How many transactions do I have?" means COUNT(*) from receipts,
+    with no purchase/refund filter unless another condition is stated.
+12. "How many receipts do I have?" means count purchase receipts only,
+    requiring receipts.total > 0.
+13. "How many purchases do I have?" means receipts.total > 0.
+14. "How many returns/refunds do I have?" means receipts.total < 0.
+15. "How many times did I buy X?" means count distinct purchase
+    transactions containing X. Join receipts to receipt_items and require:
+    - receipts.total > 0
+    - receipt_items.quantity > 0
+    - receipt_items.raw_description ILIKE the item search term
+16. "How many units of X did I buy?" or "How many X did I buy?" means
+    gross purchased quantity. Join receipts to receipt_items and require:
+    - receipts.total > 0
+    - receipt_items.quantity > 0
+    Then SUM(receipt_items.quantity).
+17. If the user explicitly asks for net quantity, sum signed
+    receipt_items.quantity across purchases and returns.
+18. Questions asking when or where an item was bought should normally
+    use purchase transactions only unless returns are explicitly requested.
+19. Monetary item spend uses receipt_items.total_price unless the
+    question is specifically about transaction totals.
+20. For gross item purchase spend, use positive purchase transactions.
+21. For net item spend, signed item totals may include returns.
+22. Use purchase_date for date filtering.
+23. Relative dates such as "last 90 days" should use CURRENT_DATE and
+    PostgreSQL interval expressions.
+24. Do not invent columns.
+25. Add LIMIT 100 for row-level result queries when appropriate.
 """
 
     response = client.models.generate_content(
@@ -190,7 +249,9 @@ def validate_sql(sql: str) -> str:
 
     expression = statements[0]
 
-    root_name = expression.__class__.__name__
+    root_name = (
+        expression.__class__.__name__
+    )
 
     if root_name not in {
         "Select",
@@ -247,7 +308,9 @@ def execute_read_only_sql(
     list[str],
     list[tuple[Any, ...]],
 ]:
-    validated_sql = validate_sql(sql)
+    validated_sql = validate_sql(
+        sql
+    )
 
     with psycopg.connect(
         get_database_url()
@@ -279,7 +342,9 @@ def execute_read_only_sql(
                     in cursor.description
                 ]
 
-                rows = cursor.fetchmany(101)
+                rows = cursor.fetchmany(
+                    101
+                )
 
                 if len(rows) > 100:
                     raise RuntimeError(
