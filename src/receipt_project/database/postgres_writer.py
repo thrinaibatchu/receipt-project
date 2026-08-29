@@ -9,7 +9,9 @@ from receipt_project.models.receipt import Receipt
 def _get_database_url() -> str:
     load_dotenv()
 
-    database_url = os.getenv("DATABASE_URL")
+    database_url = os.getenv(
+        "DATABASE_URL"
+    )
 
     if not database_url:
         raise RuntimeError(
@@ -20,8 +22,12 @@ def _get_database_url() -> str:
     return database_url
 
 
-def find_receipt_by_source_hash(source_hash: str):
-    with psycopg.connect(_get_database_url()) as connection:
+def find_receipt_by_source_hash(
+    source_hash: str,
+):
+    with psycopg.connect(
+        _get_database_url()
+    ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -42,12 +48,11 @@ def insert_receipt(
     source_hash: str,
     receipt_fingerprint: str | None,
 ) -> int:
-    with psycopg.connect(_get_database_url()) as connection:
+    with psycopg.connect(
+        _get_database_url()
+    ) as connection:
         try:
             with connection.cursor() as cursor:
-                # Detect either:
-                # 1. the exact same source file, or
-                # 2. the same logical receipt extracted from another file
                 cursor.execute(
                     """
                     SELECT
@@ -86,11 +91,12 @@ def insert_receipt(
                         transaction_id,
                         source_file,
                         source_hash,
-                        receipt_fingerprint
+                        receipt_fingerprint,
+                        source_type
                     )
                     VALUES (
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, %s
                     )
                     RETURNING id
                     """,
@@ -104,10 +110,13 @@ def insert_receipt(
                         receipt.source_file,
                         source_hash,
                         receipt_fingerprint,
+                        "live_receipt",
                     ),
                 )
 
-                receipt_id = cursor.fetchone()[0]
+                receipt_id = (
+                    cursor.fetchone()[0]
+                )
 
                 for item in receipt.items:
                     cursor.execute(
@@ -122,7 +131,8 @@ def insert_receipt(
                             total_price
                         )
                         VALUES (
-                            %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s,
+                            %s, %s, %s
                         )
                         """,
                         (
@@ -136,7 +146,9 @@ def insert_receipt(
                         ),
                     )
 
-                for discount in receipt.discounts:
+                for discount in (
+                    receipt.discounts
+                ):
                     cursor.execute(
                         """
                         INSERT INTO receipt_discounts (
@@ -145,7 +157,9 @@ def insert_receipt(
                             amount,
                             related_item_code
                         )
-                        VALUES (%s, %s, %s, %s)
+                        VALUES (
+                            %s, %s, %s, %s
+                        )
                         """,
                         (
                             receipt_id,
@@ -156,6 +170,7 @@ def insert_receipt(
                     )
 
             connection.commit()
+
             return receipt_id
 
         except Exception:
