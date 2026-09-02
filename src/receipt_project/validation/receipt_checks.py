@@ -1,7 +1,9 @@
 from receipt_project.models.receipt import Receipt
 
 
-def validate_receipt_totals(receipt: Receipt) -> list[str]:
+def validate_receipt_totals(
+    receipt: Receipt,
+) -> list[str]:
     issues: list[str] = []
 
     items_total = sum(
@@ -14,18 +16,32 @@ def validate_receipt_totals(receipt: Receipt) -> list[str]:
         for discount in receipt.discounts
     )
 
-    calculated_subtotal = items_total - discounts_total
+    transaction_sign = (
+        -1
+        if receipt.total < 0
+        else 1
+    )
+
+    calculated_subtotal = (
+        transaction_sign
+        * (
+            items_total
+            - discounts_total
+        )
+    )
 
     if receipt.subtotal is not None:
         difference = abs(
-            calculated_subtotal - receipt.subtotal
+            calculated_subtotal
+            - receipt.subtotal
         )
 
         if difference > 0.02:
             issues.append(
-                "Items minus discounts do not match subtotal: "
+                "Items minus adjustments do not "
+                "match signed subtotal: "
                 f"items={items_total:.2f}, "
-                f"discounts={discounts_total:.2f}, "
+                f"adjustments={discounts_total:.2f}, "
                 f"calculated={calculated_subtotal:.2f}, "
                 f"subtotal={receipt.subtotal:.2f}"
             )
@@ -35,11 +51,13 @@ def validate_receipt_totals(receipt: Receipt) -> list[str]:
         and receipt.tax is not None
     ):
         expected_total = (
-            receipt.subtotal + receipt.tax
+            receipt.subtotal
+            + receipt.tax
         )
 
         difference = abs(
-            expected_total - receipt.total
+            expected_total
+            - receipt.total
         )
 
         if difference > 0.02:

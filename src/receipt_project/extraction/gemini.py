@@ -235,6 +235,134 @@ Rules:
 32. If the purchase date is not clearly visible in the supplied file,
     set purchase_date to null. Never infer, estimate, or guess the
     purchase date from other information.
+
+33. Determine whether the receipt is a purchase or a return/refund from
+    explicit receipt evidence such as:
+    - APPROVED - PURCHASE
+    - APPROVED - REFUND
+    - negative subtotal, tax, or total
+    - clearly printed return/refund indicators
+
+34. For purchase transactions:
+    - subtotal must be positive when printed as positive
+    - tax must be positive when printed as positive
+    - total must be positive
+
+35. For return/refund transactions:
+    - subtotal must be negative
+    - tax must be negative when tax is refunded
+    - total must be negative
+    Preserve the transaction direction exactly as shown on the receipt.
+
+36. Item quantity, unit_price, and total_price must remain positive
+    absolute merchandise magnitudes even for return/refund transactions.
+    The signed receipt total determines whether those merchandise lines
+    represent purchases or returns.
+
+37. On refund receipts, a positive coupon reversal, promotional reversal,
+    price adjustment, or other non-merchandise adjustment must NOT be
+    extracted as a merchandise item.
+
+38. When a refund adjustment references an item number, put it in
+    discounts with:
+    - amount as a positive absolute value
+    - related_item_code populated when identifiable
+
+39. Example refund:
+
+        ITEM A          25.00-
+        2 @ 2.50
+        ADJUST / ITEM_A  5.00
+        ITEM B          10.00-
+        SUBTOTAL       30.00-
+        TAX             2.10-
+        TOTAL          32.10-
+        APPROVED - REFUND
+
+    Interpret this as:
+    - ITEM A: merchandise return, quantity 1, total_price 25.00
+    - ITEM B: merchandise return, quantity 1, total_price 10.00
+    - 5.00 line: refund adjustment related to ITEM A, not merchandise
+    - subtotal = -30.00
+    - tax = -2.10
+    - total = -32.10
+
+40. Never convert a refund into a positive purchase merely because the
+    structured schema uses positive merchandise line magnitudes.
+
+41. COSTCO QUANTITY-HELPER RULE:
+
+    Costco may print a quantity helper line immediately BEFORE the item
+    that it describes.
+
+    Example:
+
+        PRODUCT A 8.00
+        2 @ 6.00
+        ITEM123 PRODUCT B 12.00
+
+    This means:
+
+        PRODUCT A:
+            quantity = 1
+            unit_price = 8.00
+            total_price = 8.00
+
+        PRODUCT B:
+            quantity = 2
+            unit_price = 6.00
+            total_price = 12.00
+
+    because:
+
+        2 * 6.00 = 12.00
+
+    Do NOT attach the helper line to PRODUCT A merely because PRODUCT A
+    appears before the helper.
+
+42. When processing a line of the form:
+
+        N @ UNIT_PRICE
+
+    search the nearby merchandise lines for the one whose printed line
+    total equals:
+
+        N * UNIT_PRICE
+
+    within normal currency rounding.
+
+    Exact arithmetic matching overrides positional assumptions.
+
+43. If assigning a quantity helper causes items minus discounts to disagree
+    with the printed subtotal, reconsider the quantity-helper assignment.
+
+44. COSTCO TRANSACTION-ID RULE:
+
+    Costco may print a long numeric code near the top of the receipt that
+    is NOT the preferred transaction identifier.
+
+    When another numeric identifier appears directly next to the printed
+    transaction date/time, prefer the identifier next to the date/time.
+
+45. If that date/time transaction identifier appears more than once on the
+    receipt, that repeated identifier is stronger evidence and must be
+    preferred over an unrelated long number near the receipt header.
+
+46. Example:
+
+        99999999999999999999999
+        ...
+        01/15/2026 17:52 1234567890123
+        ...
+        01/15/2026 17:52 1234567890123
+
+    transaction_id must be:
+
+        1234567890123
+
+    and NOT:
+
+        99999999999999999999999
 """
 
     return generate_receipt(
@@ -315,13 +443,57 @@ Important repair rules:
 
 7. Do not invent missing prices or quantities.
 
-8. Keep discounts separate from merchandise items.
+8. Keep discounts and adjustment lines separate from merchandise items.
 
-9. source_file must remain exactly:
+9. Re-evaluate whether the receipt is a purchase or a return/refund.
+
+10. If the receipt is a return/refund:
+    - subtotal must be negative
+    - refunded tax must be negative
+    - total must be negative
+    - merchandise quantity and item price fields remain positive absolute
+      magnitudes
+    - coupon reversals and refund adjustments are not merchandise items
+
+11. A positive adjustment line on a refund receipt may reduce the absolute
+    refund amount. If it references an item code, place it in discounts
+    with a positive amount and related_item_code when identifiable.
+
+12. Do not repair a refund by turning negative receipt totals into positive
+    values.
+
+13. source_file must remain exactly:
 
    {file_path.name}
 
-10. Return the complete receipt, not only the fields that changed.
+14. For Costco quantity-helper failures, explicitly test arithmetic.
+
+    Example:
+
+        PRODUCT A 8.00
+        2 @ 6.00
+        PRODUCT B 12.00
+
+    must become:
+
+        PRODUCT A quantity 1, unit_price 8.00, total_price 8.00
+        PRODUCT B quantity 2, unit_price 6.00, total_price 12.00
+
+    because 2 * 6.00 = 12.00.
+
+15. For Costco transaction IDs, prefer the numeric identifier printed next
+    to the transaction date/time, particularly when it is repeated. Do not
+    substitute an unrelated long number printed near the top of the receipt.
+
+16. Preserve fields that were already extracted correctly unless the
+    original receipt clearly proves they are wrong.
+
+    In particular, when repairing a quantity, price, discount, subtotal,
+    tax, or total issue, do not remove or replace a valid store_item_code,
+    transaction_id, product description, or other correctly extracted
+    field merely because another field needed repair.
+
+17. Return the complete receipt, not only the fields that changed.
 """
 
     return generate_receipt(
